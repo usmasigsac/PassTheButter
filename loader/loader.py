@@ -11,8 +11,9 @@ import subprocess
 #############
 
 
-def exceptionHandler(exception):
-	???
+def exceptionHandler(exception,location):
+	#use the exception handler to decide what to do in certain situations.
+	print("[!!] %s during %s" % (exception,location))
 
 
 class loader:
@@ -41,7 +42,7 @@ class loader:
 				os.system(install)
 			print("[#] Requirements installed.")
 		except:
-			exceptionHandler(exception)
+			exceptionHandler(sys.exc_info()[0],"requirements installation")
 
 	#QUEUE:build a priority queue of file objects (file descriptors)
 		#priority 0: not yet loaded
