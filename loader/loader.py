@@ -7,23 +7,41 @@
 ###IMPORTS###
 import sys
 import os
+import subprocess
 #############
 
-#used to check requirements.txt for updates.
-#NOTE: the name of the .txt is the install env to be used.
-#For example, if you needed pwntools, you would simply
-#put 'pwntools' on it's own line in pip.txt.
-#The 'env' parameter specifies which install environment
-#to use.
-class loader
+
+def exceptionHandler(exception):
+	???
+
+
+class loader:
+	#used to check requirements.txt for updates.
+	#NOTE: the name of the .txt is the install env to be used.
+	#For example, if you needed pwntools, you would simply
+	#put 'pwntools' on it's own line in pip.txt.
+	#The 'env' parameter specifies which install environment
+	#to use.
 	def check_req(env):
+		#use which to find if it exists
+		reqs_f = open(('%s.txt' % env),'r')
+		reqs = []
+		for line in reqs_f:
+			if '/' not in subprocess.check_output(['which',line.strip()]):
+				reqs.insert(0,line.strip()) #reqs is mutable, no need to reassign
+				print("[#] Added %s to install queue..." % line.strip())
+			else:
+				pass
 		try:
 			if env == "pip":
-				reqs = open(('%s.txt' % env),'r')
-				install = 'pip install'.join(" %s"%[x.strip() for x in reqs])
+				install = "pip install " + ' '.join(x for x in reqs)
 				os.system(install)
 			else:
-				intall = ""
+				install = env+" install " + ' '.join(x for x in reqs)
+				os.system(install)
+			print("[#] Requirements installed.")
+		except:
+			exceptionHandler(exception)
 
 	#QUEUE:build a priority queue of file objects (file descriptors)
 		#priority 0: not yet loaded
@@ -36,7 +54,7 @@ class loader
 		#'global fileQueue' is not declared in this function. It
 		# will only be modifying it's input and returning that queue.
 
-	def main:
+	def run:
 		global fileQueue
 		#try:
 			#loop:
@@ -56,4 +74,4 @@ class loader
 			#else, push notification to admin
 
 if __name__ == "__main__":
-	main()
+	loader.run()
