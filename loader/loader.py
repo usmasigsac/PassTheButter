@@ -1,4 +1,4 @@
-#!/usr/bin/evn python
+#!/usr/bin/evn python3
 
 #PURPOSE: The loader installs any requirements deemed necessary by the team,
 #as well as compiles the .py and .c files provided by the user. The .pyc and
@@ -19,11 +19,9 @@ class loader
 	def check_req(env):
 		try:
 			if env == "pip":
-				install = ""
-				reqs = open('pip.txt','r')
-				for line in reqs:
-					install += " "+line.strip
-				os.system("pip install"+install)
+				reqs = open(('%s.txt' % env),'r')
+				install = 'pip install'.join(" %s"%[x.strip() for x in reqs])
+				os.system(install)
 			else:
 				intall = ""
 
