@@ -3,7 +3,7 @@ import socket
 import requests
 import random
 
-def sendRandomRequests(host, port):         
+def randomRequests(host, port):         
         try:  
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         except socket.error:
