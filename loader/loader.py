@@ -87,7 +87,7 @@ class Pool:
 		self.loader = loader
 
 	def get():
-		return subprocess.getoutput(['ls pool/']).split('\n')
+		return subprocess.getoutput(['ls'+self.location]).split('\n')
 	
 	def check():
 		diff = []
@@ -97,16 +97,23 @@ class Pool:
 		return diff
 
 class Loader:
-	def __init__(self,pooldir):
+	def __init__(self,pooldir,config_file,log_file):
 		print("[#] Initializing ...")
 		self.pool = Pool(pooldir,self)
-		self.load = getPool()
+		self.load = pool.get()
 		self.loaded = []
 		self.jobs = []
+		self.config = config_file
+		self.log = open(log_file,'w')
+		self.exitstatus = 0
 
 	def exceptionHandler(exception,location,action):
 		#use the exception handler to decide what to do in certain situations.
 		print("[!!] %s during %s" % (exception,location))
+		if action == 1:
+			
+		elif action == 2:
+		elif action == 3:
 
 	def requirements(env,dir):
 		#NOTE: the name of the .txt is the install env to be used.
@@ -125,7 +132,7 @@ class Loader:
 			os.system(install)
 			print("[#] Requirements installed.")
 		except:
-			exceptionHandler(sys.exc_info()[0],"requirements installation")
+			exceptionHandler(sys.exc_info()[0],"requirements installation",1)
 
 	def run:
 		try:
@@ -149,17 +156,16 @@ class Loader:
 													except:
 						except:
 							exceptionHandler(sys.exc_info()[0],"on %s's installation" % newdir)
-
-						#build job
+						#init job
 						newjob = Job(newdir)
-						newjob.lastRun = time.time()
 						self.jobs.insert(0,newjob)
 
 		except:
-			pass
-			#log error
-			#if non-critical, restart looper
-			#else, push notification to admin
+			self.log.write("[!!] %s at %s" % (sys.exc_info()[0],time.time()))
+		
 
 if __name__ == "__main__":
-	loader()
+	if len(sys.argv) != 3:
+		print("[#] Usage: loader.py <config.cfg> <loader.log>")
+	loader = Loader("pool/",pid,sys.argv[1],sys.argv[2])
+	loader.run()
