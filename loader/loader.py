@@ -10,6 +10,7 @@ import os
 import subprocess
 from threading import Thread
 import py_compile
+import time
 #############
 
 def async(f):
@@ -17,6 +18,68 @@ def async(f):
         thr = Thread(target=f, args=args, kwargs=kwargs)
         thr.start()
     return wrapper
+
+class Job:
+    def __init__(self,name):
+        self.name = name
+        self.path = name + '/'
+        self.threads = {}
+        self.stations = []
+        self.interval = 0
+        self.enabled = False
+        self.lastRun = 0
+
+    def load(self):
+        """
+        loads from backup
+
+        :return:
+        """
+        pass
+
+    def export(self):
+        """
+        writes to backup
+
+        :return:
+        """
+        pass
+
+    def writeLog(self):
+        pass
+
+    def enable(self):
+        pass
+
+    def disable(self):
+        pass
+
+    def delete(self):
+        pass
+
+    def changeStations(self):
+        pass
+
+    def changeInterval(self):
+        pass
+
+    def beginJob(self):
+        pass
+
+    def stopJob(self):
+        pass
+
+    def spawnThread(self):
+        pass
+
+    def killThread(self):
+        pass
+
+    def attack(self):
+        return 'Not Initialized'
+
+    def run(self):
+        pass
 
 class Pool:
 	def __init__(self,pooldir,loader):
@@ -41,7 +104,7 @@ class Loader:
 		self.loaded = []
 		self.jobs = []
 
-	def exceptionHandler(exception,location):
+	def exceptionHandler(exception,location,action):
 		#use the exception handler to decide what to do in certain situations.
 		print("[!!] %s during %s" % (exception,location))
 
@@ -75,13 +138,22 @@ class Loader:
 						newdir = newfile.split('.zip')[0]
 						env = subprocess.getoutput('ls *.req').split('.req')[0]
 						requirements(env,newdir) #install new requirements
-						if env == 'pip':
-							py_compile.compile('%s.py' % newdir)
-						else:
-							os.system('gcc -o %s %s.c' % (newdir,newdir))
-						#configure job
-						#add job object to self.jobs
-							#url, channel to send flag back in
+
+						#new thread in case installing takes a bit
+						@async
+						try:
+							if env == 'pip':
+								py_compile.compile('%s.py' % newdir)
+							else:
+								os.system('gcc -o %s %s.c' % (newdir,newdir))
+													except:
+						except:
+							exceptionHandler(sys.exc_info()[0],"on %s's installation" % newdir)
+
+						#build job
+						newjob = Job(newdir)
+						newjob.lastRun = time.time()
+						self.jobs.insert(0,newjob)
 
 		except:
 			pass
