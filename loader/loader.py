@@ -28,6 +28,7 @@ class Job:
         self.interval = 0
         self.enabled = False
         self.lastRun = 0
+        self.type = ""#web | socket
 
     def load(self):
         """
@@ -63,9 +64,6 @@ class Job:
     def changeInterval(self):
         pass
 
-    def beginJob(self):
-        pass
-
     def stopJob(self):
         pass
 
@@ -75,10 +73,9 @@ class Job:
     def killThread(self):
         pass
 
-    def attack(self):
-        return 'Not Initialized'
-
     def run(self):
+        #loop and call spawnthread (threaded)
+        #add to self.threads
         pass
 
 class Pool:
@@ -107,15 +104,10 @@ class Loader:
 		self.log = open(log_file,'w')
 		self.exitstatus = 0
 
-	def exceptionHandler(exception,location,action):
-		#use the exception handler to decide what to do in certain situations.
+	def exception(self,exception,location):
 		print("[!!] %s during %s" % (exception,location))
-		if action == 1:
-			
-		elif action == 2:
-		elif action == 3:
 
-	def requirements(env,dir):
+	def requirements(self,env,dir):
 		#NOTE: the name of the .txt is the install env to be used.
 		#For example, if you needed pwntools, you would simply
 		#put 'pwntools' on it's own line in pip.txt.
@@ -127,14 +119,23 @@ class Loader:
 			if '' == subprocess.getoutput('which '+line.strip()):
 				reqs.insert(0,line.strip()) #reqs is mutable, no need to reassign
 				print("[#] Added %s to install queue..." % line.strip())
-		try:
-			install = env+" install " + ' '.join(x for x in reqs)
-			os.system(install)
-			print("[#] Requirements installed.")
-		except:
-			exceptionHandler(sys.exc_info()[0],"requirements installation",1)
+		for req in reqs:
+			try:
+				os.system(env+" install " +req)
+				print("[#] Installing requirement %s..."%req)
+			except KeyboardInterrupt:
+				self.log.write("[#] Exited on Ctrl-C")
+				exit(0)
+			except:
+				exception(sys.exc_info()[0],"requirements installation")
+				err = "[!!] Ignoring %s"%req
+				print(err)
+				self.log.write(err)
+				continue
+		print("[#] Requirements installed.")
 
-	def run:
+
+	def run(self):
 		try:
 			while True:
 				new = self.pool.check()
@@ -147,22 +148,42 @@ class Loader:
 						requirements(env,newdir) #install new requirements
 
 						#new thread in case installing takes a bit
-						@async
 						try:
 							if env == 'pip':
+								@async
 								py_compile.compile('%s.py' % newdir)
 							else:
+								@async
 								os.system('gcc -o %s %s.c' % (newdir,newdir))
-													except:
+
+						except KeyboardInterrupt:
+							self.log.write("[#] Exited on Ctrl-C")
+							exit(0)							
 						except:
-							exceptionHandler(sys.exc_info()[0],"on %s's installation" % newdir)
+							exception(sys.exc_info()[0],"on %s's installation" % newdir)
+							print("[!!] %s not compiled." % newdir)
+							continue
+
 						#init job
 						newjob = Job(newdir)
 						self.jobs.insert(0,newjob)
 
+		except KeyboardInterrupt:
+			self.log.write("[#] Exited on Ctrl-C")
+			exit(0)
 		except:
 			self.log.write("[!!] %s at %s" % (sys.exc_info()[0],time.time()))
-		
+			wait = True
+			while wait:
+				input = input('> ')
+				if input[0] == "r":
+					self.run()
+					wait = False
+				elif input[0] == "c":
+					wait = False
+				else:
+					print("[#] Please reboot or continue.")
+					sleep(1)
 
 if __name__ == "__main__":
 	if len(sys.argv) != 3:
