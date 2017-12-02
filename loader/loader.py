@@ -11,6 +11,8 @@ import subprocess
 from threading import Thread
 import py_compile
 import time
+import importlib
+import multiprocessing as mp
 #############
 
 def async(f):
@@ -20,14 +22,16 @@ def async(f):
     return wrapper
 
 class Job:
-    def __init__(self,name):
+    def __init__(self,name,loader):
         self.name = name
+        self.payload = importlib.abc.SourceLoader(self.name)
         self.path = name + '/'
         self.threads = {}
-        self.stations = []
+        self.stations = [] #managed by launcher
         self.interval = 0
         self.enabled = False
         self.lastRun = 0
+        self.flags = []
 
     def load(self):
         """
@@ -45,41 +49,39 @@ class Job:
         """
         pass
 
-    def writeLog(self):
-        pass
+    def writeLog(self,string):
+        loader.log.write("[#] %s"%string)
 
     def enable(self):
-        pass
+        self.enabled = True
 
     def disable(self):
-        pass
+    	self.enabled = False
 
-    def delete(self):
-        pass
+    def changeStations(self,newstations):
+        self.stations = newstations
 
-    def changeStations(self):
-        pass
+    def changeInterval(self,newinterval):
+        self.interval = newinterval
 
-    def changeInterval(self):
-        pass
+    def stop(self):
+    	try:
+        	loader.jobs.remove(self.name)
+        except:
+        	print("[#] Error stopping %s"%self.name)
 
-    def beginJob(self):
-        pass
-
-    def stopJob(self):
-        pass
-
-    def spawnThread(self):
-        pass
-
-    def killThread(self):
-        pass
-
-    def attack(self):
-        return 'Not Initialized'
+    def newFlags(self,job_id,flags):#hook
+    	pass
 
     def run(self):
-        pass
+    	try:
+	        if hasattr(self.payload, 'pwn'):
+	            for team in self.stations:
+	                flag = getattr(self.payload,'pwn')(team) #user inputs a function 'pwn' that returns the flag
+	                self.flags.insert(0,flag)
+	                self.newFlags(self.name,self.flags)
+	    except:
+	    	print("[!!] Error during %s runtime"%self.name)
 
 class Pool:
 	def __init__(self,pooldir,loader):
@@ -107,15 +109,10 @@ class Loader:
 		self.log = open(log_file,'w')
 		self.exitstatus = 0
 
-	def exceptionHandler(exception,location,action):
-		#use the exception handler to decide what to do in certain situations.
+	def exception(self,exception,location):
 		print("[!!] %s during %s" % (exception,location))
-		if action == 1:
-			
-		elif action == 2:
-		elif action == 3:
 
-	def requirements(env,dir):
+	def requirements(self,env,dir):
 		#NOTE: the name of the .txt is the install env to be used.
 		#For example, if you needed pwntools, you would simply
 		#put 'pwntools' on it's own line in pip.txt.
@@ -127,14 +124,28 @@ class Loader:
 			if '' == subprocess.getoutput('which '+line.strip()):
 				reqs.insert(0,line.strip()) #reqs is mutable, no need to reassign
 				print("[#] Added %s to install queue..." % line.strip())
-		try:
-			install = env+" install " + ' '.join(x for x in reqs)
-			os.system(install)
-			print("[#] Requirements installed.")
-		except:
-			exceptionHandler(sys.exc_info()[0],"requirements installation",1)
+		for req in reqs:
+			try:
+				os.system(env+" install " +req)
+				print("[#] Installing requirement %s..."%req)
+			except KeyboardInterrupt:
+				self.log.write("[#] Exited on Ctrl-C")
+				exit(0)
+			except:
+				exception(sys.exc_info()[0],"requirements installation")
+				err = "[!!] Ignoring %s"%req
+				print(err)
+				self.log.write(err)
+				continue
+		print("[#] Requirements installed.")
 
-	def run:
+	def newjobs(self,boolean,jobs):#hook
+		pass
+
+	def checkfile(self):
+		pass
+
+	def run(self):
 		try:
 			while True:
 				new = self.pool.check()
@@ -147,22 +158,44 @@ class Loader:
 						requirements(env,newdir) #install new requirements
 
 						#new thread in case installing takes a bit
-						@async
 						try:
 							if env == 'pip':
+								@async
 								py_compile.compile('%s.py' % newdir)
 							else:
+								@async
 								os.system('gcc -o %s %s.c' % (newdir,newdir))
-													except:
-						except:
-							exceptionHandler(sys.exc_info()[0],"on %s's installation" % newdir)
-						#init job
-						newjob = Job(newdir)
-						self.jobs.insert(0,newjob)
 
+						except KeyboardInterrupt:
+							self.log.write("[#] Exited on Ctrl-C")
+							exit(0)							
+						except:
+							exception(sys.exc_info()[0],"on %s's installation" % newdir)
+							print("[!!] %s not compiled." % newdir)
+							continue
+
+						#init job
+						newjob = Job(newdir,self)
+						self.jobs.insert(0,newjob)
+					self.log.write("[#] New jobs created.")
+					self.newjobs(True,self.jobs)
+
+		except KeyboardInterrupt:
+			self.log.write("[#] Exited on Ctrl-C")
+			exit(0)
 		except:
 			self.log.write("[!!] %s at %s" % (sys.exc_info()[0],time.time()))
-		
+			wait = True
+			while wait:
+				input = input('> ')
+				if input[0] == "r":
+					self.run()
+					wait = False
+				elif input[0] == "c":
+					wait = False
+				else:
+					print("[#] Please reboot or continue.")
+					sleep(1)
 
 if __name__ == "__main__":
 	if len(sys.argv) != 3:
