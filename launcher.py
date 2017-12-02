@@ -4,10 +4,12 @@ import os
 import sys
 from netaddr import *
 from threading import Thread
-import readline
+import gnureadline as readline
+#import pyreadline as readline
 import re
 import requests
 import multiprocessing as mp
+from loader.loader import Loader
 
 BACKUP_DIR = './backup'
 BACKUP_JOBS = BACKUP_DIR + '/jobs'
@@ -92,68 +94,6 @@ class Scorer:
                 self.submitFlag(flag)
 
 ######################################################################
-
-class Job:
-    def __init__(self):
-        self.name = ''
-        self.path = ''
-        self.threads = {}
-        self.stations = []
-        self.interval = 0
-        self.enabled = False
-        self.lastRun = 0
-
-    def load(self):
-        """
-        loads from backup
-
-        :return:
-        """
-        pass
-
-    def export(self):
-        """
-        writes to backup
-
-        :return:
-        """
-        pass
-
-    def writeLog(self):
-        pass
-
-    def enable(self):
-        pass
-
-    def disable(self):
-        pass
-
-    def delete(self):
-        pass
-
-    def changeStations(self):
-        pass
-
-    def changeInterval(self):
-        pass
-
-    def beginJob(self):
-        pass
-
-    def stopJob(self):
-        pass
-
-    def spawnThread(self):
-        pass
-
-    def killThread(self):
-        pass
-
-    def attack(self):
-        return 'Not Initialized'
-
-    def run(self):
-        pass
 
 class Service:
     def __init__(self, name, port, type):
