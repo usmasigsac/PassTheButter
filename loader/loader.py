@@ -21,6 +21,12 @@ def async(f):
         thr.start()
     return wrapper
 
+def newProc(f):
+    def wrapper(*args, **kwargs):
+        p = mp.Process(target=f, args=args, kwargs=kwargs)
+        p.start()
+    return wrapper
+
 class Job:
   def __init__(self,name,loader):
     self.name = name
@@ -85,11 +91,13 @@ class Pool:
 class Loader:
   def __init__(self,pooldir,config_file='test.cfg',log_file='loader.log'):
     self.pool = Pool(pooldir,self)
+    self.pooldir = pooldir
     self.load = self.pool.get()
     self.loaded = []
     self.jobs = []
     self.config = config_file
     self.log = open(log_file,'w')
+    self.enabled = False
     self.exitstatus = 0
     self.payload_path = ""
 
@@ -122,7 +130,7 @@ class Loader:
         print(err)
         self.log.write(err)
         continue
-    print("[#] Requirements installed.")
+    #print("[#] Requirements installed.")
 
   def newjobs(self,boolean,jobs):#hook
     pass
@@ -130,16 +138,20 @@ class Loader:
   def checkfile(self):
     pass
 
+  def kill(self):
+      exit(0)
+
+  @newProc
   def run(self):
     try:
-      while True:
+      while self.enabled:
         new = self.pool.check()
         if new != []:
           for newfile in new:
-            os.system('unzip -qq -u pool/'+newfile+" -d pool/")
+            os.system('unzip -qq -u '+self.pooldir+newfile+" -d "+self.pooldir)
             #name of zip, folder, and payload
             file = newfile.split('.zip')[0]
-            newdir = "pool/"+file
+            newdir = self.pooldir+file
             os.system('touch '+newdir+"/__init__.py")
             env = subprocess.getoutput('ls '+newdir+'/*.req').split('.req')[0]
             env = env.split(newdir+"/")[1]
@@ -154,7 +166,7 @@ class Loader:
               else:
                 #@async
                 os.system('gcc -o %s %s.c' % (newdir+file,newdir+file))
-
+              self.loaded.insert(0,file)
             except KeyboardInterrupt:
               self.log.write("[#] Exited on Ctrl-C")
               exit(0)             
@@ -166,7 +178,7 @@ class Loader:
             #init job
             newjob = Job(newdir+"/pwn.pyc",self)
             self.jobs.insert(0,newjob)
-            print("[#] Job < %s > added." % file)
+            #print("[#] Job < %s > added." % file)
           self.log.write("[#] New jobs created.")
           self.newjobs(True,self.jobs)
 

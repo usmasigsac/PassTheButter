@@ -129,8 +129,10 @@ class Command:
                     print(self)
                     return False
 
+        self.func(*options)
+
     def __repr__(self, *args):
-        return 'Usage: ' + self.name + ' \n'.join(str(u) for u in self.usage)
+        return 'Usage: ' + self.name + ' ' + ' '.join(str(u) for u in self.usage)
 
 class Usage:
     def __init__(self, func, usage, optional=False):
@@ -138,14 +140,16 @@ class Usage:
         self.usage = usage
         self.optional = optional
 
-    def __call__(self, *args):
+    def __call__(self, args):
         return self.func(args) # ret tuple (bool success, ret val)
 
     def __repr__(self):
         return ''.join(['<' if not self.optional else '[', self.usage, '>' if not self.optional else ']'])
 
 class Launcher:
+    #TODO iprange, chaff
     def __init__(self, fname='config.cfg', debug=True):
+        self.version = 'v0.1.beta_AF'
         self.DEBUG = debug
         self.cfg = {}
         self.cfgOpts = ['host','iprange','debug','random_chaff','blacklist_targets','whitelist_targets','interval']
@@ -158,6 +162,13 @@ class Launcher:
         self.jobs = {}
         self.hosts = []
         self.services = []
+        self.parseCfg(fname)
+ #       print(self.cfg.keys())
+        # for c in self.cfgOpts:
+        #     if c not in self.cfg.keys():
+        #         self.log('Incorrect Config File...Make sure all values are present:\n\t%s' % str(self.cfgOpts))
+        #         sys.exit(1)
+
         self.commands = {
             #"add": Command("add", "add a new job", self.createJob, Usage(self.checkFileExists, "job file"),
             #               Usage(self.checkJobNotExists, "job name")),
@@ -191,13 +202,11 @@ class Launcher:
             #"export": Command("export", "export all jobs to a job file to be imported later", self.exportJobs,
             #                  Usage(lambda i: (True, str(i)), "export location"))
         }
-        self.scoreBot = Scorer(logger=self.log, loginRequired=False, token='ed3ef73609c5a16d768b94c431e9b2fb')
-        self.loader = Loader()
-        self.parseCfg(fname)
-        for c in self.cfgOpts:
-            if c not in self.cfg.keys():
-                self.log('Incorrect Config File...Make sure all values are present:\n\t%s' % str(self.cfgOpts))
-                sys.exit(1)
+        self.scoreBot = Scorer(logger=self.log, loginRequired=False, token='2e059bcd-ff85-4142-af4d-906b46840428')
+        self.loader = Loader('loader/pool/')
+        self.loader.enabled = True
+        self.loader.run()
+
 
 
     def listJobs(self, job=False):
@@ -223,7 +232,7 @@ class Launcher:
         # TODO update
         if os.path.isfile(location):
             return (True, location)
-        else: return (False, 'No File at location %' % location)
+        else: return (False, 'No File at location %s' % location)
 
     def checkIfInts(self, stationList):
         retList = []
@@ -241,14 +250,14 @@ class Launcher:
 
     def commandHelp(self, cmd=False):
         if not cmd:
-            print('Launcher %s' % self.version)
-            print('All Commands:')
+            self.log('Launcher %s' % self.version)
+            self.log('All Commands:')
             for c in self.commands.keys():
-                print('\t%s -> %s' % (self.commands[c].name, self.commands[c].help))
-                print('\t\t' + self.commands[c])
+                self.log('\t%s -> %s' % (self.commands[c].name, self.commands[c].desc))
+                self.log('\t\t' + str(self.commands[c]))
         else:
-            print('%s -> %s' % (cmd.name, cmd.help))
-            print('\t' + str(cmd))
+            self.log('%s -> %s' % (cmd.name, cmd.help))
+            self.log('\t' + str(cmd))
 
     def inJobQueue(self, job):
         if job in self.jobQueue.keys(): return (True, job)
@@ -260,7 +269,11 @@ class Launcher:
 
     def reboot(self):
         pass
-    #def export(self):
+    def backup(self):
+        pass
+    def export(self):
+        pass
+
     def addJob(self, name=False):
         if not name:
             print('Available jobs to add and enable:')
@@ -271,6 +284,9 @@ class Launcher:
             job.interval = self.interval
             job.enabled = True
             job.newFlags = self.newFlags
+            for station in self.hosts:
+                if station not in self.blackList:
+                    job.stations.append(station)
             self.jobs[job.name] = job
             del self.jobQueue[job.name()]
 
@@ -298,6 +314,8 @@ class Launcher:
             job.delete()
         if not self.jobs:
             self.log('All jobs successfuly killed.')
+        self.loader.kill()
+
 
     def parseCfg(self, fname):
         """
@@ -314,6 +332,7 @@ class Launcher:
         with open(fname, 'r') as f:
             lines = [l.split('=') for l in f.readlines()]
             for line in lines:
+                line = [line[0].replace('\n',''), line[1].replace('\n','')]
                 if line[0] not in self.cfgOpts:
                     print(line[0] + ' is not a valid cfg opt...skipping')
                     continue
@@ -325,9 +344,13 @@ class Launcher:
 
                 elif line[0] == self.cfgOpts[1]:
                     # define the ip range to attack
-                    opt = line[1].split(',')
-                    self.log('Attempting to Init IP Range to: %s-%s' % (opt[0], opt[1]))
-                    self.cfg[line[0]] = IPRange(opt[0], opt[1])
+                    # opt = line[1].split(',')
+                    # self.log('Attempting to Init IP Range to: %s-%s' % (opt[0], opt[1]))
+                    # self.cfg[line[0]] = IPRange(opt[0], opt[1])
+                    with open(line[1],'r') as f:
+                        for line in f.readlines():
+                            self.hosts.append(line.strip())
+                        self.log('Added IPs to self.hosts')
 
                 elif line[0] == self.cfgOpts[2]:
                     # set debug mode
@@ -414,7 +437,10 @@ class Launcher:
                 res = res.rstrip().split(' ')
                 if res[0] in self.commands:
                     self.log('Command entered: %s' % str(res))
-                    self.commands[res[0]](*res[1:])
+                    if len(res) > 1:
+                        self.commands[res[0]](*res[1:])
+                    else:
+                        self.commands[res[0]]()
                 else:
                     self.log("'%s': Not a valid command. Type 'help' for usage" % res[0])
 
@@ -485,18 +511,19 @@ class Completer(object):
 if __name__ == '__main__':
     while 1:
         crash = False
+        launcher = Launcher()
         try:
             if crash:
-                Launcher.start(crash=True)
+                launcher.start(crash=True)
             else:
-                Launcher.start()
+                launcher.start()
             crash = False
         except KeyboardInterrupt:
-            Launcher.stop()
+            launcher.stop()
             print('Exiting.')
             sys.exit(0)
         except Exception as e:
-            Launcher.log('FATAL ERROR: \n%s' % e)
-            Launcher.log('Restarting...')
+            launcher.log('FATAL ERROR: \n%s' % str(e))
+            launcher.log('Restarting...')
             crash = True
             continue
