@@ -6,6 +6,7 @@ from netaddr import *
 from threading import Thread
 import readline
 import re
+import requests
 import multiprocessing as mp
 
 BACKUP_DIR = './backup'
@@ -28,6 +29,69 @@ def newProc(f):
         p = mp.Process(target=f, args=args, kwargs=kwargs)
         p.start()
     return wrapper
+
+######################################################################
+""" 
+Edit The Following object based on how the competition desires the flags to be submitted
+"""
+class Scorer:
+    def __init__(self, loginRequired=True, baseUrl='http://monitor.ructfe.org', scorePath='/flags', token=None, creds=('user','pass'), logger=None, loginPath='/login'):
+        #self.Pconn, self.Cconn = mp.Pipe()
+        self.flags = []
+        self.enabled = True
+        self.session = requests.Session()
+        if not logger:
+            self.log = self.logger
+        else:
+            self.log = logger
+
+        # change the below settings based on comp
+        # ex. RUCTFe has teams POST after logging in, while iCTF has a python API
+        # the following is an implementation for RUCTFe
+        self.loginRequired = loginRequired
+        self.loginPath = loginPath
+        self.scorePath = baseUrl + scorePath
+        self.token = token
+        self.creds = {'username': creds[0], 'password': creds[1]}
+
+
+    def logger(self, text):
+        print(text)
+
+    def login(self):
+        self.log('Attempting to login with creds: %s')
+        r =self.session.post(self.loginPath, data=self.creds)
+        if r.status_code == 200:
+            self.log('Login successful.')
+        else:
+            self.log('Login fail.')
+
+    @newProc
+    def submitFlag(self, payload):
+        """
+
+        :param payload: type list: of the format:
+                        [string flag, string ip, string jobName, string service
+        :return:
+        """
+        self.log('Submitting flag from Team: %d, Job: %s, Service: %s' % (payload[1], payload[2], payload[3]))
+        r = self.session.put(self.scorePath, json={'X-Team-Token': self.token},data='[%s]' % payload[0])
+        if r.status_code == 200:
+            self.log('Flag submission on Team: %d, Job: %s, Service: %s. Success!' % (payload[1], payload[2], payload[3]))
+        else:
+            self.log('Flag submission on Team: %d, Job: %s, Service: %s. Fail!' % (payload[1], payload[2], payload[3]))
+
+    def run(self):
+        if self.loginRequired:
+            self.login()
+        
+
+        while self.enabled:
+            for flag in self.flags:
+                self.log('Received payload: %s' % str(flag))
+                self.submitFlag(flag)
+
+######################################################################
 
 class Job:
     def __init__(self):
@@ -135,7 +199,7 @@ class Usage:
         self.optional = optional
 
     def __call__(self, *args):
-        return self.func(s) # ret tuple (bool success, ret val)
+        return self.func(args) # ret tuple (bool success, ret val)
 
     def __repr__(self):
         return ''.join(['<' if not self.optional else '[', self.usage, '>' if not self.optional else ']'])
@@ -144,19 +208,19 @@ class Launcher:
     def __init__(self, fname='config.cfg', debug=True):
         self.DEBUG = debug
         self.cfg = {}
-        self.cfgOpts = ['host','iprange','debug','random_chaff','blacklist_targets','whitelist_targets']
+        self.cfgOpts = ['host','iprange','debug','random_chaff','blacklist_targets','whitelist_targets','interval']
         self.randChaff = False
         self.blackList = []
         self.whiteList = []
-        self.parseCfg(fname)
-
+        self.jobQueue = {}
+        self.interval = 5 * 60
         self.attackTypes = ['web','socket']
         self.jobs = {}
         self.hosts = []
         self.services = []
         self.commands = {
-            "add": Command("add", "add a new job", self.createJob, Usage(self.checkFileExists, "job file"),
-                           Usage(self.checkJobNotExists, "job name")),
+            #"add": Command("add", "add a new job", self.createJob, Usage(self.checkFileExists, "job file"),
+            #               Usage(self.checkJobNotExists, "job name")),
             "enable": Command("enable", "begin running job", lambda job: job.enable(),
                               Usage(self.checkJobExists, "job name")),
             "disable": Command("disable", "stop running job and kill any threads it is currently running",
@@ -165,26 +229,45 @@ class Launcher:
                               self.deleteJob, Usage(self.checkJobExists, "job name")),
             "list": Command("list", "list all information on current jobs", self.listJobs,
                             Usage(self.checkJobExists, "job name", True)),
+            "newjob": Command("newjob", "add and enable newjobs from the queue", self.addJob, Usage(
+                    self.inJobQueue, "job name", True)),
             "stations": Command("stations", "change stations that a job will run on",
                                 lambda job, stations: job.changeStations(stations),
                                 Usage(self.checkJobExists, "job name"),
                                 Usage(self.checkIfInts, "stations separated by commas")),
             "interval": Command("interval", "changes the time interval between running the job",
-                                lambda job, interval=default_interval: job.changeInterval(interval),
+                                lambda job, interval=self.cfg['interval']: job.changeInterval(interval),
                                 Usage(self.checkJobExists, "job name"), Usage(
                     lambda i: (True, int(i)) if i.isdigit() and int(i) > 0 else (
                     False, "%s is not a valid interval (number greater than zero)" % i), "interval in seconds")),
             "help": Command("help", "show information from all commands", self.commandHelp,
                             Usage(self.commandExists, "command name", True)),
-            "quit": Command("quit", "kill all jobs and exit out of launcher", self.quitLauncher),
+            #"quit": Command("quit", "kill all jobs and exit out of launcher", self.quitLauncher),
             "print": Command("print", "print most recent lines from the log file",
                              lambda job, lines=10: job.printLog(lines), Usage(self.checkJobExists, "job name"), Usage(
                     lambda i: (True, int(i)) if i.isdigit() and int(i) > 0 else (
                     False, "%s is not a valid number of lines (number greater than zero)" % i), "number of lines",
                     True)),
-            "export": Command("export", "export all jobs to a job file to be imported later", self.exportJobs,
-                              Usage(lambda i: (True, str(i)), "export location"))
+            #"export": Command("export", "export all jobs to a job file to be imported later", self.exportJobs,
+            #                  Usage(lambda i: (True, str(i)), "export location"))
         }
+        self.scoreBot = Scorer(logger=self.log, loginRequired=False, token='ed3ef73609c5a16d768b94c431e9b2fb')
+        self.loader = Loader()
+        self.parseCfg(fname)
+        for c in self.cfgOpts:
+            if c not in self.cfg.keys():
+                self.log('Incorrect Config File...Make sure all values are present:\n\t%s' % str(self.cfgOpts))
+                sys.exit(1)
+
+
+    def listJobs(self, job=False):
+        if job: print(job)
+        else:
+            if self.jobs:
+                for job in self.jobs.keys():
+                    print(job)
+            else:
+                self.log('No jobs created yet')
 
     def checkJobExists(self, name):
         if name in self.jobs.keys():
@@ -227,8 +310,40 @@ class Launcher:
             print('%s -> %s' % (cmd.name, cmd.help))
             print('\t' + str(cmd))
 
-    def
+    def inJobQueue(self, job):
+        if job in self.jobQueue.keys(): return (True, job)
+        return (False, 'No job found in queue with name %s' % job)
 
+    def deleteJob(self, jobName):
+        self.jobs[jobName].stop()
+        del self.jobs[jobName]
+
+    def reboot(self):
+        pass
+    #def export(self):
+    def addJob(self, name=False):
+        if not name:
+            print('Available jobs to add and enable:')
+            for jobName in self.jobQueue.keys():
+                print('\t-'+jobName)
+        else:
+            job = self.jobQueue[name]
+            job.interval = self.interval
+            job.enabled = True
+            job.newFlags = self.newFlags
+            self.jobs[job.name] = job
+            del self.jobQueue[job.name()]
+
+
+    def newJob(self, new, jobs=list()):
+        if new and jobs:
+            for job in jobs:
+                self.jobQueue[job.name()] = job
+            self.log("New jobs added. Enter command 'newjob' to add and enable jobs")
+
+    def newFlags(self, jobName, flags={}, service=''):
+        for team in flags.keys():
+            self.scoreBot.flags.append([flags[team], team, jobName, service])
 
 
     # def createService(listServ):
@@ -260,7 +375,7 @@ class Launcher:
             lines = [l.split('=') for l in f.readlines()]
             for line in lines:
                 if line[0] not in self.cfgOpts:
-                    print(line[0] + 'is not a valid cfg opt...skipping')
+                    print(line[0] + ' is not a valid cfg opt...skipping')
                     continue
 
                 if line[0] == self.cfgOpts[0]:
@@ -304,6 +419,11 @@ class Launcher:
                     self.whiteList = self.whiteList.extend(ips)
                     self.log('Added IPs: %s to White List' % str(ips))
 
+                elif line[0] == self.cfgOpts[6]:
+                    # init round tick time
+                    self.cfg[line[0]] = int(line[1])
+                    self.log('Set round tick length to %s' % line[1])
+
     @newThread
     def runJobs(self):
         while 1:
@@ -319,7 +439,7 @@ class Launcher:
                             self.log('Error running job: %s' % job.name)
                         if not fail:
                             self.log('Successfully started job: %s' % job.name)
-            time.sleep(1)
+            time.sleep(10)
 
     def start(self, crash=False):
         if crash: self.reboot()
@@ -340,6 +460,7 @@ class Launcher:
         #     except:
         #         print("Could not import jobs file")
         self.runJobs()
+        self.backup()
 
         comp = Completer(self.commands.keys())
         readline.set_completer_delims(' \t\n;')
@@ -365,61 +486,60 @@ class Completer(object):
     This is an autocompleter to be used with the python readline class
     sample implementation and documentation is located at:
     http://stackoverflow.com/questions/5637124/tab-completion-in-pythons-raw-input
-
     """
     def __init__(self, commands):
-		self.commands = commands
-		self.re_space = re.compile('.*\s+$', re.M)
+        self.commands = commands
+        self.re_space = re.compile('.*\s+$', re.M)
 
-	def _listdir(self, root):
-		res = []
-		for name in os.listdir(root):
-			path = os.path.join(root, name)
-			if os.path.isdir(path):
-				name += os.sep
-			res.append(name)
-		return res
+    def _listdir(self, root):
+        res = []
+        for name in os.listdir(root):
+            path = os.path.join(root, name)
+            if os.path.isdir(path):
+                name += os.sep
+            res.append(name)
+        return res
 
-	def _complete_path(self, path=None):
-		if not path:
-			return self._listdir('.')
-		dirname, rest = os.path.split(path)
-		tmp = dirname if dirname else '.'
-		res = [os.path.join(dirname, p) for p in self._listdir(tmp) if p.startswith(rest)]
-		# more than one match, or single match which does not exist (typo)
-		if len(res) > 1 or not os.path.exists(path):
-			return res
-		# resolved to a single directory, so return list of files below it
-		if os.path.isdir(path):
-			return [os.path.join(path, p) for p in self._listdir(path)]
-		# exact file match terminates this completion
-		return [path + ' ']
+    def _complete_path(self, path=None):
+        if not path:
+            return self._listdir('.')
+        dirname, rest = os.path.split(path)
+        tmp = dirname if dirname else '.'
+        res = [os.path.join(dirname, p) for p in self._listdir(tmp) if p.startswith(rest)]
+        # more than one match, or single match which does not exist (typo)
+        if len(res) > 1 or not os.path.exists(path):
+            return res
+        # resolved to a single directory, so return list of files below it
+        if os.path.isdir(path):
+            return [os.path.join(path, p) for p in self._listdir(path)]
+        # exact file match terminates this completion
+        return [path + ' ']
 
-	def complete_extra(self, args):
-		if not args:
-			return self._complete_path('.')
-		# treat the last arg as a path and complete it
-		return self._complete_path(args[-1])
+    def complete_extra(self, args):
+        if not args:
+            return self._complete_path('.')
+        # treat the last arg as a path and complete it
+        return self._complete_path(args[-1])
 
-	def complete(self, text, state):
-		buffer = readline.get_line_buffer()
-		line = readline.get_line_buffer().split()
+    def complete(self, text, state):
+        buffer = readline.get_line_buffer()
+        line = readline.get_line_buffer().split()
 
-		# show all commands
-		if not line:
-			return [c + ' ' for c in self.commands][state]
-		# account for last argument ending in a space
-		if self.re_space.match(buffer):
-			line.append('')
-		# resolve command to the implementation function
-		cmd = line[0].strip()
-		if cmd in self.commands:
-			args = line[1:]
-			if args:
-				return (self.complete_extra(args) + [None])[state]
-			return [cmd + ' '][state]
-		results = [c + ' ' for c in self.commands if c.startswith(cmd)] + [None]
-		return results[state]
+        # show all commands
+        if not line:
+            return [c + ' ' for c in self.commands][state]
+        # account for last argument ending in a space
+        if self.re_space.match(buffer):
+            line.append('')
+        # resolve command to the implementation function
+        cmd = line[0].strip()
+        if cmd in self.commands:
+            args = line[1:]
+            if args:
+                return (self.complete_extra(args) + [None])[state]
+            return [cmd + ' '][state]
+        results = [c + ' ' for c in self.commands if c.startswith(cmd)] + [None]
+        return results[state]
 
 
 if __name__ == '__main__':
@@ -435,6 +555,8 @@ if __name__ == '__main__':
             Launcher.stop()
             print('Exiting.')
             sys.exit(0)
-        except:
+        except Exception as e:
+            Launcher.log('FATAL ERROR: \n%s' % e)
+            Launcher.log('Restarting...')
             crash = True
             continue
