@@ -11,7 +11,7 @@ import subprocess
 from threading import Thread
 import py_compile
 import time
-import importlib.util
+import importlib
 import multiprocessing as mp
 #############
 
@@ -29,14 +29,16 @@ def newProc(f):
 
 class Job:
   def __init__(self,name,loader):
-    self.name = name
-    self.payload = importlib.util.spec_from_file_location("pwn",name)
+    self.path = name
+    self.name = name.split('/')[2]
+    self.payload = importlib.import_module('loader.pool.test2.pwn')#importlib.util.spec_from_file_location("pwn",self.path)
     self.threads = {}
     self.stations = [] #managed by launcher
     self.interval = 1
     self.enabled = False
     self.lastRun = 0
     self.flags = {}
+    self.service = ''
     #self.service = getattr(self.payload,"SERVICE")
 
   def writeLog(self,string):
@@ -56,6 +58,7 @@ class Job:
 
   def stop(self):
     try:
+      self.disable()
       loader.jobs.remove(self.name)
     except:
       print("[#] Error stopping %s"%self.name)
@@ -65,13 +68,17 @@ class Job:
 
   def run(self):
     try:
+      print(hasattr(self.payload, 'pwn'))
       if hasattr(self.payload, 'pwn'):
         for ip in self.stations:
+          print("[#] Running...")
           flag = getattr(self.payload,'pwn')(ip) #user inputs a function 'pwn' that returns the flag
           self.flags[ip] = flag
+          print(flag)
         self.newFlags(self.name,self.flags,self.service)
-    except:
+    except Exception as e:
       print("[!!] Error during %s runtime"%self.name)
+      print(str(e))
 
 class Pool:
   def __init__(self,pooldir,loader):
@@ -79,7 +86,7 @@ class Pool:
     self.loader = loader
 
   def get(self):
-    return subprocess.getoutput(['ls '+self.location]).split('\n')
+    return subprocess.getoutput(['ls '+self.location+'/']).split('\n')
   
   def check(self):
     diff = []
@@ -92,7 +99,7 @@ class Loader:
   def __init__(self,pooldir,config_file='test.cfg',log_file='loader.log'):
     self.pool = Pool(pooldir,self)
     self.pooldir = pooldir
-    self.load = self.pool.get()
+    self.load = self.pool.get
     self.loaded = []
     self.jobs = []
     self.config = config_file
@@ -125,7 +132,7 @@ class Loader:
         self.log.write("[#] Exited on Ctrl-C")
         exit(0)
       except:
-        exception(sys.exc_info()[0],"requirements installation")
+        self.exception(sys.exc_info()[0],"requirements installation")
         err = "[!!] Ignoring %s"%req
         print(err)
         self.log.write(err)
@@ -141,7 +148,7 @@ class Loader:
   def kill(self):
       exit(0)
 
-  @newProc
+  @async
   def run(self):
     try:
       while self.enabled:
@@ -166,7 +173,6 @@ class Loader:
               else:
                 #@async
                 os.system('gcc -o %s %s.c' % (newdir+file,newdir+file))
-              self.loaded.insert(0,file)
             except KeyboardInterrupt:
               self.log.write("[#] Exited on Ctrl-C")
               exit(0)             
@@ -176,11 +182,13 @@ class Loader:
               continue
 
             #init job
-            newjob = Job(newdir+"/pwn.pyc",self)
-            self.jobs.insert(0,newjob)
-            #print("[#] Job < %s > added." % file)
-          self.log.write("[#] New jobs created.")
-          self.newjobs(True,self.jobs)
+            if file not in self.loaded:
+                self.loaded.insert(0, file)
+                newjob = Job(newdir + "/pwn.pyc", self)
+                self.jobs.insert(0,newjob)
+                print("[#] Job < %s > added." % file)
+                self.log.write("[#] New jobs created.")
+                self.newjobs(True,[newjob])
 
     except KeyboardInterrupt:
       self.log.write("[#] Exited on Ctrl-C")

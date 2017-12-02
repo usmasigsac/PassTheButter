@@ -22,7 +22,7 @@ BACKUP_CONFIG = BACKUP_DIR + '/setup'
 def newThread(f):
     def wrapper(*args, **kwargs):
         thr = Thread(target=f, args=args, kwargs=kwargs)
-        thr.setDaemon(True)
+        thr.setDaemon(False)
         thr.start()
     return wrapper
 
@@ -68,7 +68,7 @@ class Scorer:
         else:
             self.log('Login fail.')
 
-    @newProc
+    @newThread
     def submitFlag(self, payload):
         """
 
@@ -157,7 +157,7 @@ class Launcher:
         self.blackList = []
         self.whiteList = []
         self.jobQueue = {}
-        self.interval = 5 * 60
+        self.interval = 5 #*60
         self.attackTypes = ['web','socket']
         self.jobs = {}
         self.hosts = []
@@ -180,7 +180,7 @@ class Launcher:
                               self.deleteJob, Usage(self.checkJobExists, "job name")),
             "list": Command("list", "list all information on current jobs", self.listJobs,
                             Usage(self.checkJobExists, "job name", True)),
-            "newjob": Command("newjob", "add and enable newjobs from the queue", self.addJob, Usage(
+            "addjob": Command("addjob", "add and enable newjobs from the queue", self.addJob, Usage(
                     self.inJobQueue, "job name", True)),
             "stations": Command("stations", "change stations that a job will run on",
                                 lambda job, stations: job.changeStations(stations),
@@ -204,6 +204,7 @@ class Launcher:
         }
         self.scoreBot = Scorer(logger=self.log, loginRequired=False, token='2e059bcd-ff85-4142-af4d-906b46840428')
         self.loader = Loader('loader/pool/')
+        self.loader.newjobs = self.newJobs
         self.loader.enabled = True
         self.loader.run()
 
@@ -277,25 +278,29 @@ class Launcher:
     def addJob(self, name=False):
         if not name:
             print('Available jobs to add and enable:')
-            for jobName in self.jobQueue.keys():
+            for jobName in self.jobQueue:
+                print(jobName)
                 print('\t-'+jobName)
         else:
             job = self.jobQueue[name]
             job.interval = self.interval
             job.enabled = True
             job.newFlags = self.newFlags
-            for station in self.hosts:
-                if station not in self.blackList:
-                    job.stations.append(station)
+            if self.hosts:
+                for station in self.hosts:
+                    if not self.blackList:
+                        job.stations.append(station)
+                    elif station not in self.blackList:
+                        job.stations.append(station)
             self.jobs[job.name] = job
-            del self.jobQueue[job.name()]
+            del self.jobQueue[job.name]
 
 
-    def newJob(self, new, jobs=list()):
+    def newJobs(self, new, jobs=list()):
         if new and jobs:
             for job in jobs:
-                self.jobQueue[job.name()] = job
-            self.log("New jobs added. Enter command 'newjob' to add and enable jobs")
+                self.jobQueue[job.name] = job
+            self.log("New jobs added. Enter command 'addjob' to add and enable jobs")
 
     def newFlags(self, jobName, flags={}, service=''):
         for team in flags.keys():
@@ -310,8 +315,8 @@ class Launcher:
     def stop(self):
         self.log('Ctrl+C. Launcher Stopped by User')
         for job in self.jobs:
-            self.log('Killing job: %s' % job.name)
-            job.delete()
+            self.log('Killing job: %s' % self.jobs[job].name)
+            self.jobs[job].stop()
         if not self.jobs:
             self.log('All jobs successfuly killed.')
         self.loader.kill()
@@ -390,19 +395,21 @@ class Launcher:
     @newThread
     def runJobs(self):
         while 1:
-            for job in self.jobs:
+            for jobname in self.jobs:
+                job = self.jobs[jobname]
                 fail = False
                 if job.enabled:
                     if time.time() - job.lastRun >= job.interval:
                         self.log('Attempting to run job: %s' % job.name)
                         try:
-                            job.beginJob()
-                        except:
+                            job.run()
+                        except Exception as e:
+                            print(str(e))
                             fail = True
                             self.log('Error running job: %s' % job.name)
                         if not fail:
                             self.log('Successfully started job: %s' % job.name)
-            time.sleep(10)
+            time.sleep(1)
 
     def start(self, crash=False):
         if crash: self.reboot()
