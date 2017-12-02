@@ -11,6 +11,8 @@ import subprocess
 from threading import Thread
 import py_compile
 import time
+import importlib
+import multiprocessing as mp
 #############
 
 def async(f):
@@ -20,15 +22,16 @@ def async(f):
     return wrapper
 
 class Job:
-    def __init__(self,name):
+    def __init__(self,name,loader):
         self.name = name
+        self.payload = importlib.abc.SourceLoader(self.name)
         self.path = name + '/'
         self.threads = {}
-        self.stations = []
+        self.stations = [] #managed by launcher
         self.interval = 0
         self.enabled = False
         self.lastRun = 0
-        self.type = ""#web | socket
+        self.flags = []
 
     def load(self):
         """
@@ -46,37 +49,39 @@ class Job:
         """
         pass
 
-    def writeLog(self):
-        pass
+    def writeLog(self,string):
+        loader.log.write("[#] %s"%string)
 
     def enable(self):
-        pass
+        self.enabled = True
 
     def disable(self):
-        pass
+    	self.enabled = False
 
-    def delete(self):
-        pass
+    def changeStations(self,newstations):
+        self.stations = newstations
 
-    def changeStations(self):
-        pass
+    def changeInterval(self,newinterval):
+        self.interval = newinterval
 
-    def changeInterval(self):
-        pass
+    def stop(self):
+    	try:
+        	loader.jobs.remove(self.name)
+        except:
+        	print("[#] Error stopping %s"%self.name)
 
-    def stopJob(self):
-        pass
-
-    def spawnThread(self):
-        pass
-
-    def killThread(self):
-        pass
+    def newFlags(self,job_id,flags):#hook
+    	pass
 
     def run(self):
-        #loop and call spawnthread (threaded)
-        #add to self.threads
-        pass
+    	try:
+	        if hasattr(self.payload, 'pwn'):
+	            for team in self.stations:
+	                flag = getattr(self.payload,'pwn')(team) #user inputs a function 'pwn' that returns the flag
+	                self.flags.insert(0,flag)
+	                self.newFlags(self.name,self.flags)
+	    except:
+	    	print("[!!] Error during %s runtime"%self.name)
 
 class Pool:
 	def __init__(self,pooldir,loader):
@@ -134,6 +139,11 @@ class Loader:
 				continue
 		print("[#] Requirements installed.")
 
+	def newjobs(self,boolean,jobs):#hook
+		pass
+
+	def checkfile(self):
+		pass
 
 	def run(self):
 		try:
@@ -165,8 +175,10 @@ class Loader:
 							continue
 
 						#init job
-						newjob = Job(newdir)
+						newjob = Job(newdir,self)
 						self.jobs.insert(0,newjob)
+					self.log.write("[#] New jobs created.")
+					self.newjobs(True,self.jobs)
 
 		except KeyboardInterrupt:
 			self.log.write("[#] Exited on Ctrl-C")
