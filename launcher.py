@@ -84,14 +84,13 @@ class Scorer:
             self.log('Flag submission on Team: %d, Job: %s, Service: %s. Fail!' % (payload[1], payload[2], payload[3]))
 
     def run(self):
-        if self.loginRequired:
-            self.login()
-        
+        if self.loginRequired: self.login()
 
         while self.enabled:
             for flag in self.flags:
                 self.log('Received payload: %s' % str(flag))
                 self.submitFlag(flag)
+            time.sleep(1)
 
 ######################################################################
 
@@ -152,6 +151,7 @@ class Launcher:
         self.version = 'v0.1.beta_AF'
         self.DEBUG = debug
         self.cfg = {}
+        self.enabled = False
         self.cfgOpts = ['host','iprange','debug','random_chaff','blacklist_targets','whitelist_targets','interval']
         self.randChaff = False
         self.blackList = []
@@ -269,10 +269,21 @@ class Launcher:
         del self.jobs[jobName]
 
     def reboot(self):
+        #TODO
+        # loadFromBackup()
         pass
+
     def backup(self):
+        #TODO
+        # export:
+        #       Jobs
+        #       cfg
+        #       Loader
         pass
+
     def export(self):
+        #TODO
+        # take in objects to backup
         pass
 
     def addJob(self, name=False):
@@ -317,9 +328,13 @@ class Launcher:
         for job in self.jobs:
             self.log('Killing job: %s' % self.jobs[job].name)
             self.jobs[job].stop()
+            del self.jobs[job]
         if not self.jobs:
             self.log('All jobs successfuly killed.')
         self.loader.kill()
+        self.log('Logger stopped.')
+        self.scorer.enabled = False
+        self.log('Scorer stopped.')
 
 
     def parseCfg(self, fname):
@@ -431,14 +446,14 @@ class Launcher:
         #         print("Could not import jobs file")
         self.runJobs()
         self.backup()
-
+        self.enabled = True
         comp = Completer(self.commands.keys())
         readline.set_completer_delims(' \t\n;')
         readline.parse_and_bind('tab: complete')
         readline.set_completer(comp.complete)
 
         print("\nType 'help' to for usage\n")
-        while 1:
+        while self.enabled:
             res = input('> ')
             if res:
                 res = res.rstrip().split(' ')
