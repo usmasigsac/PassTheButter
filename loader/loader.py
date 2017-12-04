@@ -21,25 +21,18 @@ def async(f):
         thr.start()
     return wrapper
 
-def newProc(f):
-    def wrapper(*args, **kwargs):
-        p = mp.Process(target=f, args=args, kwargs=kwargs)
-        p.start()
-    return wrapper
-
 class Job:
   def __init__(self,name,loader):
     self.path = name
     self.name = name.split('/')[2]
-    self.payload = importlib.import_module('loader.pool.test2.pwn')#importlib.util.spec_from_file_location("pwn",self.path)
+    self.payload = importlib.import_module('loader.pool.test2.pwn')
     self.threads = {}
     self.stations = [] #managed by launcher
     self.interval = 1
     self.enabled = False
     self.lastRun = 0
     self.flags = {}
-    self.service = ''
-    #self.service = getattr(self.payload,"SERVICE")
+    self.service = getattr(self.payload,'service')
 
   def writeLog(self,string):
     loader.log.write("[#] %s"%string)
@@ -68,17 +61,17 @@ class Job:
 
   def run(self):
     try:
-      print(hasattr(self.payload, 'pwn'))
       if hasattr(self.payload, 'pwn'):
         for ip in self.stations:
           print("[#] Running...")
           flag = getattr(self.payload,'pwn')(ip) #user inputs a function 'pwn' that returns the flag
           self.flags[ip] = flag
-          print(flag)
+          print("[FLAG] %s"%flag)
         self.newFlags(self.name,self.flags,self.service)
     except Exception as e:
-      print("[!!] Error during %s runtime"%self.name)
+      print("[!!] Error during %s runtime. Stopping."%self.name)
       print(str(e))
+      self.disable()
 
 class Pool:
   def __init__(self,pooldir,loader):
@@ -96,13 +89,13 @@ class Pool:
     return diff
 
 class Loader:
-  def __init__(self,pooldir,config_file='test.cfg',log_file='loader.log'):
+  def __init__(self,pooldir,config_file='config.cfg',log_file='loader.log'):
     self.pool = Pool(pooldir,self)
     self.pooldir = pooldir
     self.load = self.pool.get
     self.loaded = []
     self.jobs = []
-    self.config = config_file
+    self.config = open(config_file, 'r')
     self.log = open(log_file,'w')
     self.enabled = False
     self.exitstatus = 0
@@ -112,9 +105,9 @@ class Loader:
     print("[!!] %s during %s" % (exception,location))
 
   def requirements(self,env,dir):
-    #NOTE: the name of the .txt is the install env to be used.
+    #NOTE: the name of the .req is the install env to be used.
     #For example, if you needed pwntools, you would simply
-    #put 'pwntools' on it's own line in pip.txt.
+    #put 'pwntools' on it's own line in pip.req.
     #The 'env' parameter specifies which install environment
     #to use.
     reqs_f = open((dir+'/%s.req' % env),'r')
@@ -137,7 +130,10 @@ class Loader:
         print(err)
         self.log.write(err)
         continue
-    #print("[#] Requirements installed.")
+    if reqs == []:
+    	print("[#] No requirements.")
+    else:
+    	print("[#] Requirements installed.")
 
   def newjobs(self,boolean,jobs):#hook
     pass
@@ -164,18 +160,15 @@ class Loader:
             env = env.split(newdir+"/")[1]
             self.requirements(env,newdir) #install new requirements
 
-            #new thread in case installing takes a bit
             try:
               if env == 'pip':
-                #@async
                 py_compile.compile('%s.py' % (newdir+"/"+file))
                 os.system('cp '+newdir+'/__pycache__/'+file+".cpython-34.pyc "+newdir+"/pwn.pyc")
               else:
-                #@async
                 os.system('gcc -o %s %s.c' % (newdir+file,newdir+file))
             except KeyboardInterrupt:
               self.log.write("[#] Exited on Ctrl-C")
-              exit(0)             
+              exit(0)
             except:
               self.exception(sys.exc_info()[0],"on %s's installation" % file)
               print("[!!] %s not compiled." % file)
@@ -193,29 +186,30 @@ class Loader:
     except KeyboardInterrupt:
       self.log.write("[#] Exited on Ctrl-C")
       exit(0)
-    # except:
-    #   self.log.write("[!!] %s at %s" % (sys.exc_info()[0],time.time()))
-    #   wait = True
-    #   while wait:
-    #     inp = input('> ')
-    #     if inp[0] == "r":
-    #       self.run()
-    #       wait = False
-    #     elif inp[0] == "p":
-    #       print(sys.exc_info())
-    #       wait = False
-    #     elif inp[0] == "e":
-    #       wait = False
-    #     else:
-    #       print("[#] Please reboot or continue.")
+    except:
+      self.log.write("[!!] %s at %s" % (sys.exc_info()[0],time.time()))
+      wait = True
+      while wait:
+        inp = input('> ')
+        if inp[0] == "r":
+          self.run()
+          wait = False
+        elif inp[0] == "p":
+          print(sys.exc_info())
+          wait = False
+        elif inp[0] == "e":
+          wait = False
+          self.kill()
+        else:
+          print("[#] Please reboot or continue.")
 
 if __name__ == "__main__":
-#  try:
+  try:
     loader = Loader("pool/",sys.argv[1],sys.argv[2])
     loader.run()
-  # except:
-  #   if len(sys.argv) != 3:
-  #     print("[#] Usage: loader.py <config.cfg> <loader.log>")
-    # else:
-    #   print("[!!] Error:")
-    #   print(sys.exc_info())
+  except:
+    if len(sys.argv) != 3:
+      print("[#] Usage: loader.py <config.cfg> <loader.log>")
+    else:
+      print("[!!] Error:")
+      print(sys.exc_info())
