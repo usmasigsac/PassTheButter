@@ -6,6 +6,7 @@ from netaddr import *
 from threading import Thread
 import gnureadline as readline
 #import pyreadline as readline
+import json
 import re
 import requests
 import multiprocessing as mp
@@ -37,36 +38,90 @@ def newProc(f):
 Edit The Following object based on how the competition desires the flags to be submitted
 """
 class Scorer:
-    def __init__(self, loginRequired=True, baseUrl='http://monitor.ructfe.org', scorePath='/flags', token=None, creds=('user','pass'), logger=None, loginPath='/login'):
+    def __init__(self,
+                 baseUrl='http://127.0.0.1',
+                 scorePath='/submit',
+                 loginRequired=True,
+                 loginFunc=None,
+                 loginPath='/login',
+                 loginToken={'name':'','value':None},
+                 creds={'user':'','pass':''},
+                 logger=None,
+                 logFile='scoreer.log',
+                 backupDir='scorer',
+                 backupFile='scorer.bak',
+                 debug=False):
         #self.Pconn, self.Cconn = mp.Pipe()
-        self.flags = []
         self.enabled = True
-        self.session = requests.Session()
+        self.debug = debug
+        self.backupFile = backupFile
+        self.backupDir = backupDir
+        # this allows for the use of a custom logger beyond the default file used by this class
+        self.logFile = logFile
+        self.remoteLog = None
         if not logger:
             self.log = self.logger
+            self.remoteLog = True
         else:
             self.log = logger
 
-        # change the below settings based on comp
-        # ex. RUCTFe has teams POST after logging in, while iCTF has a python API
-        # the following is an implementation for RUCTFe
+        # This part is used to configure the flag submissions
+        # Some competitions require you to logon before initially scoring
+        # ex. iCTF has a Login function to use in their API
+        # ex. RUCTFe has token authentication and in the past has held a web session
         self.loginRequired = loginRequired
-        self.loginPath = loginPath
+        if loginFunc:
+            self.login = loginFunc
+        else:
+            self.session = requests.Session()
+        self.loginPath = baseUrl + loginPath
         self.scorePath = baseUrl + scorePath
-        self.token = token
-        self.creds = {'username': creds[0], 'password': creds[1]}
+        self.loginToken = loginToken
+        self.creds = creds
+
+        # attributes needed for class functionality
+        self.flags = []
+
+    def backup(self, dir=None):
+        output = dict(
+            time=time.strftime('%Y'),
+            loginPath=self.loginPath,
+            creds=self.creds,
+            loginToken=self.loginToken,
+            loginRequired=self.loginRequired,
+            logFile=self.logFile,
+            scorePath=self.scorePath,
+            backupFile=self.backupFile,
+            backupDir=self.backupDir,
+        )
+        if self.remoteLog:
+            output['logger'] = 'remote logger.'
+        outfile = self.backupFile
+        if not dir:
+            outfile = self.backupDir + outfile
+        try:
+            with open(outfile, 'r') as f:
+                f.write(json.dumps(output, sort_keys=True))
+        except Exception as e:
+            print(e)
+            return False
+        return True
 
 
-    def logger(self, text):
-        print(text)
+    def logger(self, text, lvl):
+        if lvl == 0 and not self.debug:
+            return
+        LOG_LEVELS = ['DEBUG','INFO','ERROR','FATAL']
+        with open(self.logFile, 'r')  as f:
+            f.write('[%d]: %s: %s' % (time.time(), LOG_LEVELS[lvl], text))
 
     def login(self):
         self.log('Attempting to login with creds: %s')
-        r =self.session.post(self.loginPath, data=self.creds)
+        r = self.session.post(self.loginPath, data=self.creds)
         if r.status_code == 200:
-            self.log('Login successful.')
+            self.log('Login successful.', 0)
         else:
-            self.log('Login fail.')
+            self.log('Login fail.', 2)
 
     @newThread
     def submitFlag(self, payload):
@@ -76,74 +131,23 @@ class Scorer:
                         [string flag, string ip, string jobName, string service
         :return:
         """
-        self.log('Submitting flag from Team: %d, Job: %s, Service: %s' % (payload[1], payload[2], payload[3]))
-        r = self.session.put(self.scorePath, json={'X-Team-Token': self.token},data='[%s]' % payload[0])
+        self.log('Submitting flag from Team: %d, Job: %s, Service: %s' % (payload[1], payload[2], payload[3]), 1)
+        r = self.session.put(self.scorePath, json={self.loginToken['name']: self.loginToken['value']},data='[%s]' % payload[0])
         if r.status_code == 200:
-            self.log('Flag submission on Team: %d, Job: %s, Service: %s. Success!' % (payload[1], payload[2], payload[3]))
+            self.log('Flag submission on Team: %d, Job: %s, Service: %s. Success!' % (payload[1], payload[2], payload[3]), 0)
         else:
-            self.log('Flag submission on Team: %d, Job: %s, Service: %s. Fail!' % (payload[1], payload[2], payload[3]))
+            self.log('Flag submission on Team: %d, Job: %s, Service: %s. Fail!' % (payload[1], payload[2], payload[3]), 2)
 
     def run(self):
         if self.loginRequired: self.login()
 
         while self.enabled:
             for flag in self.flags:
-                self.log('Received payload: %s' % str(flag))
+                self.log('Received payload: %s' % str(flag), 1)
                 self.submitFlag(flag)
             time.sleep(1)
 
 ######################################################################
-
-class Service:
-    def __init__(self, name, port, type):
-        self.name = name
-        self.port = port
-        self.type = type
-
-class Command:
-    def __init__(self, name, desc, func, *usage):
-        self.name = name
-        self.desc = desc
-        self.func = func
-        self.usage = usage
-
-    def __call__(self, *s):
-        options = []
-        for usage in range(len(self.usage)):
-            if usage < len(s):
-                (worked, res) = self.usage[usage](s[usage])
-                if worked:
-                    options.append(res)
-                else:
-                    if self.usage[usage].optional:
-                        break
-                    else:
-                        print(res)
-                        print(self)
-                        return False
-            else:
-                if self.usage[usage].optional:
-                    break
-                else:
-                    print(self)
-                    return False
-
-        self.func(*options)
-
-    def __repr__(self, *args):
-        return 'Usage: ' + self.name + ' ' + ' '.join(str(u) for u in self.usage)
-
-class Usage:
-    def __init__(self, func, usage, optional=False):
-        self.func = func
-        self.usage = usage
-        self.optional = optional
-
-    def __call__(self, args):
-        return self.func(args) # ret tuple (bool success, ret val)
-
-    def __repr__(self):
-        return ''.join(['<' if not self.optional else '[', self.usage, '>' if not self.optional else ']'])
 
 class Launcher:
     #TODO iprange, chaff
@@ -162,8 +166,15 @@ class Launcher:
         self.jobs = {}
         self.hosts = []
         self.services = []
+        self.logFile = 'logs/launcher.log'
+        self.backupdir = 'backups'
+        self.jobsBackupDir = self.backupdir + '/jobs'
+        self.cfgBackupDir = self.backupdir + '/cfg'
+        self.loaderBackupDir = self.backupdir + '/loader'
+        self.scorerBackupDir = self.backupdir + '/scorer'
+        self.loaderDir = 'loader/pool/'
         self.parseCfg(fname)
- #       print(self.cfg.keys())
+        # print(self.cfg.keys())
         # for c in self.cfgOpts:
         #     if c not in self.cfg.keys():
         #         self.log('Incorrect Config File...Make sure all values are present:\n\t%s' % str(self.cfgOpts))
@@ -202,13 +213,11 @@ class Launcher:
             #"export": Command("export", "export all jobs to a job file to be imported later", self.exportJobs,
             #                  Usage(lambda i: (True, str(i)), "export location"))
         }
-        self.scoreBot = Scorer(logger=self.log, loginRequired=False, token='2e059bcd-ff85-4142-af4d-906b46840428')
-        self.loader = Loader('loader/pool/')
+        self.scoreBot = Scorer(logger=self.log, loginRequired=False, loginToken={'name':'X-TEAM-AUTH','value':'2e059bcd-ff85-4142-af4d-906b46840428'})
+        self.loader = Loader(self.loaderDir)
         self.loader.newjobs = self.newJobs
         self.loader.enabled = True
         self.loader.run()
-
-
 
     def listJobs(self, job=False):
         if job: print(job)
@@ -279,11 +288,28 @@ class Launcher:
         #       Jobs
         #       cfg
         #       Loader
+        output = dict(
+            time=time.strftime('%Y'),
+
+        )
+        if self.remoteLog:
+            output['logger'] = 'remote logger.'
+        outfile = self.backupFile
+        if not dir:
+            outfile = self.backupDir + outfile
+        try:
+            with open(outfile, 'r') as f:
+                f.write(json.dumps(output, sort_keys=True))
+        except Exception as e:
+            print(e)
+            return False
+        return True
         pass
 
-    def export(self):
+    def export(self, cfg=True, jobs=True, loader=True, scorer=True):
         #TODO
         # take in objects to backup
+
         pass
 
     def addJob(self, name=False):
@@ -305,7 +331,6 @@ class Launcher:
                         job.stations.append(station)
             self.jobs[job.name] = job
             del self.jobQueue[job.name]
-
 
     def newJobs(self, new, jobs=list()):
         if new and jobs:
@@ -451,24 +476,27 @@ class Launcher:
         readline.set_completer_delims(' \t\n;')
         readline.parse_and_bind('tab: complete')
         readline.set_completer(comp.complete)
-
+        print(self.version)
         print("\nType 'help' to for usage\n")
-        while self.enabled:
-            res = input('> ')
-            if res:
-                res = res.rstrip().split(' ')
-                if res[0] in self.commands:
-                    self.log('Command entered: %s' % str(res))
-                    if len(res) > 1:
-                        self.commands[res[0]](*res[1:])
+        try:
+            while self.enabled:
+                res = input('> ')
+                if res:
+                    res = res.rstrip().split(' ')
+                    if res[0] in self.commands:
+                        self.log('Command entered: %s' % str(res))
+                        if len(res) > 1:
+                            self.commands[res[0]](*res[1:])
+                        else:
+                            self.commands[res[0]]()
                     else:
-                        self.commands[res[0]]()
-                else:
-                    self.log("'%s': Not a valid command. Type 'help' for usage" % res[0])
+                        self.log("'%s': Not a valid command. Type 'help' for usage" % res[0])
+        except KeyboardInterrupt:
+            launcher.stop()
+            print('Exiting.')
+            sys.exit(0)
 
-
-
-
+# Absolutely do not mess with the objects below this line
 class Completer(object):
     """
     This is an autocompleter to be used with the python readline class
@@ -529,6 +557,57 @@ class Completer(object):
         results = [c + ' ' for c in self.commands if c.startswith(cmd)] + [None]
         return results[state]
 
+class Service:
+    def __init__(self, name, port, type):
+        self.name = name
+        self.port = port
+        self.type = type
+
+class Command:
+    def __init__(self, name, desc, func, *usage):
+        self.name = name
+        self.desc = desc
+        self.func = func
+        self.usage = usage
+
+    def __call__(self, *s):
+        options = []
+        for usage in range(len(self.usage)):
+            if usage < len(s):
+                (worked, res) = self.usage[usage](s[usage])
+                if worked:
+                    options.append(res)
+                else:
+                    if self.usage[usage].optional:
+                        break
+                    else:
+                        print(res)
+                        print(self)
+                        return False
+            else:
+                if self.usage[usage].optional:
+                    break
+                else:
+                    print(self)
+                    return False
+
+        self.func(*options)
+
+    def __repr__(self, *args):
+        return 'Usage: ' + self.name + ' ' + ' '.join(str(u) for u in self.usage)
+
+class Usage:
+    def __init__(self, func, usage, optional=False):
+        self.func = func
+        self.usage = usage
+        self.optional = optional
+
+    def __call__(self, args):
+        return self.func(args) # ret tuple (bool success, ret val)
+
+    def __repr__(self):
+        return ''.join(['<' if not self.optional else '[', self.usage, '>' if not self.optional else ']'])
+
 
 if __name__ == '__main__':
     while 1:
@@ -540,10 +619,7 @@ if __name__ == '__main__':
             else:
                 launcher.start()
             crash = False
-        except KeyboardInterrupt:
-            launcher.stop()
-            print('Exiting.')
-            sys.exit(0)
+
         except Exception as e:
             launcher.log('FATAL ERROR: \n%s' % str(e))
             launcher.log('Restarting...')
