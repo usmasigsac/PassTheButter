@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import json
 import time
 import os
@@ -48,7 +50,7 @@ class Scorer:
                  creds={'user':'','pass':''},
                  logger=None,
                  logFile='scoreer.log',
-                 backupDir='scorer',
+                 backupDir='scorer/',
                  backupFile='scorer.bak',
                  debug=False):
         #self.Pconn, self.Cconn = mp.Pipe()
@@ -58,7 +60,7 @@ class Scorer:
         self.backupDir = backupDir
         # this allows for the use of a custom logger beyond the default file used by this class
         self.logFile = logFile
-        self.remoteLog = None
+        self.remoteLog = False
         if not logger:
             self.log = self.logger
             self.remoteLog = True
@@ -72,6 +74,7 @@ class Scorer:
         self.loginRequired = loginRequired
         if loginFunc:
             self.login = loginFunc
+            self.session = None
         else:
             self.session = requests.Session()
         self.loginPath = baseUrl + loginPath
@@ -98,7 +101,9 @@ class Scorer:
             output['logger'] = 'remote logger.'
         outfile = self.backupFile
         if not dir:
-            outfile = self.backupDir + outfile
+            outfile = self.backupDir + time.strftime("%S%M%H%d%m%Y") + outfile
+        else:
+            outfile = dir + time.strftime("%S%M%H%d%m%Y") + outfile
         try:
             with open(outfile, 'r') as f:
                 f.write(json.dumps(output, sort_keys=True))
@@ -173,6 +178,8 @@ class Launcher:
         self.loaderBackupDir = self.backupdir + '/loader'
         self.scorerBackupDir = self.backupdir + '/scorer'
         self.loaderDir = 'loader/pool/'
+        self.remoteLog = False
+        self.backupFile = 'launcher.bak'
         self.parseCfg(fname)
         # print(self.cfg.keys())
         # for c in self.cfgOpts:
