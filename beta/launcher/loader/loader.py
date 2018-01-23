@@ -2,7 +2,7 @@
 
 import os
 import sys
-import importlib
+import time
 import subprocess
 import py_compile
 from threading import Thread
@@ -75,20 +75,16 @@ class Loader:
                             self.jobs.insert(0, newjob)
                             print('[+] Job %s added' % file)
                             self.newJobs(True, [newjob])
-
+                time.sleep(1) # we really don't need to run this so often   
         except Exception as e:
             print('lol fail')
             print(e)
         
 
 if __name__ == '__main__':
-    try:
+    try:    
         ldr = Loader('../../exploits')
         ldr.run()
-    
     except:
-        if len(sys.argv) != 3:
-            print('[-] Usage: loader.py <relative exploit_dir path>')
-        else:
-            print('epic fail')
-            print(sys.exc_info())
+        print('epic fail')
+        print(sys.exc_info())
