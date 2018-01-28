@@ -32,7 +32,7 @@ class Job:
     self.enabled = False
     self.lastRun = 0
     self.flags = {}
-    self.service = getattr(self.payload,'service')
+    self.service = getattr(self.payload,'SERVICE')
 
   def writeLog(self,string):
     loader.log.write("[#] %s"%string)

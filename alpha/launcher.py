@@ -8,7 +8,6 @@ from netaddr import *
 from threading import Thread
 import gnureadline as readline
 #import pyreadline as readline
-import json
 import re
 import requests
 import multiprocessing as mp
@@ -626,7 +625,10 @@ if __name__ == '__main__':
             else:
                 launcher.start()
             crash = False
-
+        except KeyboardInterrupt:
+            launcher.stop()
+            print('Exiting.')
+            sys.exit(0)
         except Exception as e:
             launcher.log('FATAL ERROR: \n%s' % str(e))
             launcher.log('Restarting...')
